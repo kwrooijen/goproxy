@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"bytes"
 	"crypto/tls"
 	"net/http"
 	"regexp"
@@ -23,6 +24,8 @@ type ProxyCtx struct {
 	Session   int64
 	certStore CertStorage
 	Proxy     *ProxyHttpServer
+
+	RawRequest *bytes.Buffer
 }
 
 type RoundTripper interface {
