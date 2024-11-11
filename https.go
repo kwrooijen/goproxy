@@ -303,6 +303,18 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 					}
 					ctx.Logf("resp %v", resp.Status)
 				}
+
+				rawRespBuffer := &bytes.Buffer{}
+				if err := resp.Write(rawRespBuffer); err != nil {
+					ctx.Warnf("Cannot write raw response to buffer: %v", err)
+					return
+				}
+				ctx.RawResponse = bytes.NewBuffer(rawRespBuffer.Bytes())
+				if _, err := rawRespBuffer.WriteTo(rawClientTls); err != nil {
+					ctx.Warnf("Cannot write raw response to client: %v", err)
+					return
+				}
+
 				resp = proxy.filterResponse(resp, ctx)
 				defer resp.Body.Close()
 

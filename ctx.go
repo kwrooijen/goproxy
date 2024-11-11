@@ -25,7 +25,8 @@ type ProxyCtx struct {
 	certStore CertStorage
 	Proxy     *ProxyHttpServer
 
-	RawRequest *bytes.Buffer
+	RawRequest  *bytes.Buffer
+	RawResponse *bytes.Buffer
 }
 
 type RoundTripper interface {
