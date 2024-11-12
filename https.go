@@ -221,9 +221,16 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 			}
 			clientTlsReader := bufio.NewReader(rawClientTls)
 			for !isEof(clientTlsReader) {
+				saveContext := true
 				rawRequestBuffer := &bytes.Buffer{}
-				teeRequestReader := io.TeeReader(clientTlsReader, rawRequestBuffer)
-				req, err := http.ReadRequest(bufio.NewReader(teeRequestReader))
+				buf := clientTlsReader
+
+				if saveContext {
+					teeRequestReader := io.TeeReader(clientTlsReader, rawRequestBuffer)
+					buf = bufio.NewReader(teeRequestReader)
+				}
+
+				req, err := http.ReadRequest(buf)
 				var ctx = &ProxyCtx{Req: req, Session: atomic.AddInt64(&proxy.sess, 1), Proxy: proxy, UserData: ctx.UserData}
 				if err != nil && err != io.EOF {
 					return
@@ -233,7 +240,9 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 					return
 				}
 
-				ctx.RawRequest = rawRequestBuffer
+				if saveContext {
+					ctx.RawRequest = rawRequestBuffer
+				}
 
 				req.RemoteAddr = r.RemoteAddr // since we're converting the request, need to carry over the original connecting IP as well
 				ctx.Logf("req %v", r.Host)
@@ -304,15 +313,22 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 					ctx.Logf("resp %v", resp.Status)
 				}
 
-				rawRespBuffer := &bytes.Buffer{}
-				if err := resp.Write(rawRespBuffer); err != nil {
-					ctx.Warnf("Cannot write raw response to buffer: %v", err)
-					return
-				}
-				ctx.RawResponse = bytes.NewBuffer(rawRespBuffer.Bytes())
-				if _, err := rawRespBuffer.WriteTo(rawClientTls); err != nil {
-					ctx.Warnf("Cannot write raw response to client: %v", err)
-					return
+				if saveContext {
+					bodyBytes, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						return
+					}
+					resp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+
+					duplicatedResp := *resp
+					duplicatedResp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+
+					rawRespBuffer := &bytes.Buffer{}
+					if err := duplicatedResp.Write(rawRespBuffer); err != nil {
+						ctx.Warnf("Cannot write raw response to buffer: %v", err)
+						return
+					}
+					ctx.RawResponse = bytes.NewBuffer(rawRespBuffer.Bytes())
 				}
 
 				resp = proxy.filterResponse(resp, ctx)
